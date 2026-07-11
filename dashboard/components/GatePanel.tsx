@@ -1,4 +1,5 @@
 import type { Finding, GateVerdict } from "@/lib/types";
+import { formatGateSummary } from "@/lib/gateSummary";
 
 const STATUS_STYLES: Record<string, { pill: string; label: string }> = {
   PASS: { pill: "bg-enterprise-green/10 text-enterprise-green", label: "PASS" },
@@ -31,6 +32,7 @@ function GateBadge({
 }) {
   const status = verdict?.status;
   const style = status ? STATUS_STYLES[status] : undefined;
+  const summaryText = formatGateSummary(verdict?.summary);
 
   return (
     <div className="rounded-2xl border border-hairline bg-stone p-5 sm:p-6">
@@ -52,9 +54,9 @@ function GateBadge({
         </span>
       </div>
 
-      {verdict?.summary && (
+      {summaryText && (
         <p className="mt-3 text-[13px] leading-relaxed text-ink-muted">
-          {verdict.summary}
+          {summaryText}
         </p>
       )}
 
@@ -63,18 +65,30 @@ function GateBadge({
           {findings.map((finding, i) => (
             <li
               key={`${finding.title}-${i}`}
-              className="flex items-start justify-between gap-3 text-[13px] text-ink"
+              className="border-b border-hairline/60 pb-2 last:border-0 last:pb-0"
             >
-              <span>{finding.title}</span>
-              {finding.severity && (
-                <span
-                  className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${
-                    SEVERITY_STYLES[String(finding.severity).toLowerCase()] ??
-                    "bg-canvas text-ink-muted"
-                  }`}
-                >
-                  {String(finding.severity)}
+              <div className="flex items-start justify-between gap-3 text-[13px] text-ink">
+                <span className="min-w-0">
+                  {finding.plain_summary ?? finding.title}
                 </span>
+                {finding.severity && (
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${
+                      SEVERITY_STYLES[String(finding.severity).toLowerCase()] ??
+                      "bg-canvas text-ink-muted"
+                    }`}
+                  >
+                    {String(finding.severity)}
+                  </span>
+                )}
+              </div>
+              {finding.plain_summary && finding.title !== finding.plain_summary && (
+                <p className="mt-1 text-[11px] text-ink-muted">{finding.title}</p>
+              )}
+              {finding.narrator === "gemma_local" && (
+                <p className="mt-1 text-[10px] uppercase tracking-wide text-action-blue">
+                  On-device · Gemma
+                </p>
               )}
             </li>
           ))}

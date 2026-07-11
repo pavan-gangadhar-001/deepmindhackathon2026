@@ -51,7 +51,8 @@ def assess(session_id: str, deploy_result: dict) -> dict:
     handoff = build_handoff(
         session_id=session_id,
         project_id=deploy_result.get("project_id", ""),
-        service_name=deploy_result.get("service", ""),
+        service_name=deploy_result.get("service_name")
+                    or deploy_result.get("service", ""),
         region=deploy_result.get("region", ""),
         deploy_url=deploy_url or "",
     )

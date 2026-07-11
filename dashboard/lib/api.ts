@@ -1,5 +1,6 @@
 import { API_BASE } from "./config";
 import { mockEventStream, mockStatus } from "./mock";
+import { isMockSession, lostSessionStatus } from "./sessionMode";
 import type {
   SessionEvent,
   SessionStatus,
@@ -23,29 +24,72 @@ export async function startSession(
   return res.json();
 }
 
+export async function uploadProjectZip(file: File): Promise<{ project_path: string }> {
+  const form = new FormData();
+  form.append("file", file);
+
+  const res = await fetch(`${API_BASE}/api/upload/project`, {
+    method: "POST",
+    body: form,
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || `Upload failed (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function getGemmaStatus(): Promise<{
+  enabled: boolean;
+  available: boolean;
+  model: string;
+}> {
+  try {
+    const res = await fetch(`${API_BASE}/api/gemma/status`);
+    if (!res.ok) {
+      return { enabled: false, available: false, model: "" };
+    }
+    return res.json();
+  } catch {
+    return { enabled: false, available: false, model: "" };
+  }
+}
+
 export async function getSessionStatus(
-  sessionId: string
+  sessionId: string,
+  options?: { mock?: boolean }
 ): Promise<SessionStatus> {
+  const mock = isMockSession(sessionId, options?.mock);
+
   try {
     const res = await fetch(`${API_BASE}/api/session/${sessionId}/status`);
 
+    if (res.status === 404) {
+      return mock ? mockStatus(sessionId) : lostSessionStatus(sessionId);
+    }
+
     if (!res.ok) {
-      return mockStatus(sessionId);
+      return mock ? mockStatus(sessionId) : lostSessionStatus(sessionId);
     }
 
     return res.json();
   } catch {
-    return mockStatus(sessionId);
+    return mock ? mockStatus(sessionId) : lostSessionStatus(sessionId);
   }
 }
 
 export function subscribeSessionEvents(
   sessionId: string,
   onEvent: (event: SessionEvent) => void,
-  onError?: (err: Error) => void
+  options?: { mock?: boolean; onError?: (err: Error) => void }
 ): () => void {
+  const mock = isMockSession(sessionId, options?.mock);
+  const onError = options?.onError;
   let closed = false;
   let source: EventSource | null = null;
+  let mockStarted = false;
 
   const connect = () => {
     source = new EventSource(`${API_BASE}/api/session/${sessionId}/events`);
@@ -60,8 +104,11 @@ export function subscribeSessionEvents(
 
     source.onerror = () => {
       source?.close();
-      if (!closed) {
+      if (!closed && mock && !mockStarted) {
+        mockStarted = true;
         void runMock();
+      } else if (!closed && !mock) {
+        onError?.(new Error("Session not found or engine restarted"));
       }
     };
   };
@@ -77,10 +124,14 @@ export function subscribeSessionEvents(
     }
   };
 
-  try {
-    connect();
-  } catch {
+  if (mock) {
     void runMock();
+  } else {
+    try {
+      connect();
+    } catch {
+      onError?.(new Error("Could not connect to engine"));
+    }
   }
 
   return () => {

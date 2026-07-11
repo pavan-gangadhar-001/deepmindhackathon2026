@@ -109,8 +109,35 @@ export async function* mockEventStream(
     {
       type: "phase_start",
       agent: "devops",
-      message: "Waiting for backend engine (Claude building C7)...",
+      message: "Deploying to Cloud Run (demo mode — connect engine for live deploy)...",
       data: { phase: "deploy", mock: true },
+    },
+    {
+      type: "phase_start",
+      agent: "sre",
+      message: "Confirming production health",
+      data: { phase: "sre" },
+    },
+    {
+      type: "sre_handoff",
+      agent: "sre",
+      message:
+        "Your application is live and responding. I'm watching for errors and traffic spikes.",
+      data: {
+        handoff: {
+          service_name: "demo-app",
+          region: "asia-south1",
+          deploy_url: "https://demo-app.example.run.app",
+          session_id: sessionId,
+        },
+        health: { reachable: true, healthy: true, status_code: 200 },
+      },
+    },
+    {
+      type: "readiness",
+      agent: "orchestrator",
+      message: "Production readiness assessed.",
+      data: { readiness_score: 87 },
     },
   ];
 

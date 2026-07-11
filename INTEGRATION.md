@@ -46,6 +46,8 @@ intake
 
 **Merged from `feat/pentest-agent`:** functional testing gate (`pentest/functest/`), dashboard `GatePanel` (Works? / Secure?), extension dual-gate fix loop.
 
+**Local Gemma (Ollama):** when `PRODY_GEMMA_ENABLED=1` and Ollama is running, gate findings and executive summaries are narrated on-device via `engine/gemma_local.py` before falling back to cloud Gemini. Check: `GET /api/gemma/status`.
+
 **Security fail loop (IDE):**
 
 1. User runs **Prody: Ship to Production**

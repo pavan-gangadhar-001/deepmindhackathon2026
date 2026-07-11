@@ -18,6 +18,8 @@ export type Finding = {
   title: string;
   severity?: string;
   description?: string;
+  plain_summary?: string;
+  narrator?: string;
   [key: string]: unknown;
 };
 
@@ -50,6 +52,14 @@ export type PendingApproval = {
   architecture?: Record<string, unknown>;
 };
 
+export type SreHandoff = {
+  project_id?: string;
+  service_name?: string;
+  region?: string;
+  deploy_url?: string;
+  session_id?: string;
+};
+
 export type SessionStatus = {
   session_id: string;
   phase: SessionPhase;
@@ -59,11 +69,9 @@ export type SessionStatus = {
   pending_approval?: PendingApproval | null;
   project_path?: string;
   repo_url?: string;
-  // Security gate verdict (kept as `gate_status` for back-compat with the
-  // original single-gate contract).
   gate_status?: GateVerdict | null;
-  // Functional (does-it-work) gate verdict — new alongside gate_status.
   functional_gate_status?: GateVerdict | null;
+  sre_handoff?: SreHandoff | null;
 };
 
 export type StartSessionRequest = {

@@ -8,7 +8,8 @@ const agentColors: Record<string, string> = {
   security: "text-coral",
   architect: "text-action-blue",
   devops: "text-enterprise-green",
-  sre: "text-ink",
+  sre: "text-enterprise-green",
+  gemma: "text-violet-400",
   intake: "text-ink-muted",
 };
 

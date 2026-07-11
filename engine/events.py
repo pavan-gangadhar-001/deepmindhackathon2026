@@ -55,6 +55,7 @@ class Agent:
     ARCHITECT = "architect"
     DEVOPS = "devops"
     SRE = "sre"
+    GEMMA = "gemma"  # local on-device narration (Ollama + Gemma)
 
 
 @dataclass

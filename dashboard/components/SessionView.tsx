@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { getSessionStatus, subscribeSessionEvents } from "@/lib/api";
+import { getSessionStatus, getGemmaStatus, subscribeSessionEvents } from "@/lib/api";
+import { formatGateSummary } from "@/lib/gateSummary";
 import { mockStatus } from "@/lib/mock";
 import type {
   Finding,
@@ -10,12 +11,14 @@ import type {
   SessionEvent,
   SessionPhase,
   SessionStatus,
+  SreHandoff,
 } from "@/lib/types";
 import { ApprovalPanel } from "@/components/ApprovalPanel";
 import { DashboardNav } from "@/components/DashboardNav";
 import { EventStream } from "@/components/EventStream";
 import { GatePanel } from "@/components/GatePanel";
 import { ReadinessPanel } from "@/components/ReadinessPanel";
+import { SREPanel } from "@/components/SREPanel";
 
 const KNOWN_PHASES: SessionPhase[] = [
   "intake",
@@ -39,9 +42,10 @@ function toGateVerdict(
   data: Record<string, unknown> | undefined
 ): GateVerdict | null {
   if (!data || typeof data.status !== "string") return null;
+  const summary = formatGateSummary(data.summary) ?? undefined;
   return {
     status: data.status as GateVerdict["status"],
-    summary: typeof data.summary === "string" ? data.summary : undefined,
+    summary,
     gate_type:
       data.gate_type === "functional" || data.gate_type === "security"
         ? data.gate_type
@@ -71,9 +75,21 @@ export function SessionView({
   const [securityGate, setSecurityGate] = useState<GateVerdict | null>(null);
   const [functionalFindings, setFunctionalFindings] = useState<Finding[]>([]);
   const [securityFindings, setSecurityFindings] = useState<Finding[]>([]);
+  const [sessionLost, setSessionLost] = useState(false);
+  const [gemmaOnline, setGemmaOnline] = useState(false);
+  const [sreHandoff, setSreHandoff] = useState<SreHandoff | null>(null);
+  const [sreHealth, setSreHealth] = useState<{
+    healthy?: boolean;
+    reachable?: boolean;
+    status_code?: number;
+  }>();
+  const [sreExplanation, setSreExplanation] = useState<string>();
 
   useEffect(() => {
-    const unsub = subscribeSessionEvents(sessionId, (event) => {
+    void getGemmaStatus().then((s) => setGemmaOnline(s.enabled && s.available));
+    const unsub = subscribeSessionEvents(
+      sessionId,
+      (event) => {
       setEvents((prev) => [...prev, event]);
 
       // Prefer the explicit phase carried by the event envelope / phase
@@ -97,6 +113,32 @@ export function SessionView({
         setStatus((s) => ({ ...s, phase: "architect", readiness_score: 87 }));
       } else if (event.agent === "devops") {
         setStatus((s) => ({ ...s, phase: "deploy" }));
+      } else if (event.agent === "sre") {
+        setStatus((s) => ({ ...s, phase: "sre" }));
+      }
+
+      if (event.type === "sre_handoff" && event.data) {
+        const data = event.data as {
+          handoff?: SreHandoff;
+          health?: typeof sreHealth;
+        };
+        if (data.handoff) setSreHandoff(data.handoff);
+        if (data.health) setSreHealth(data.health);
+        if (event.message) setSreExplanation(event.message);
+      }
+
+      if (event.type === "deploy_url" && event.data?.deploy_url) {
+        setStatus((s) => ({
+          ...s,
+          deploy_url: String(event.data?.deploy_url),
+        }));
+      }
+
+      if (event.type === "readiness" && event.data?.readiness_score != null) {
+        setStatus((s) => ({
+          ...s,
+          readiness_score: Number(event.data?.readiness_score),
+        }));
       }
 
       if (event.type === "finding") {
@@ -138,16 +180,28 @@ export function SessionView({
           pending_approval: null,
         }));
       }
-    });
+    },
+      {
+        mock,
+        onError: () => setSessionLost(true),
+      }
+    );
 
     const poll = setInterval(async () => {
-      const next = await getSessionStatus(sessionId);
+      const next = await getSessionStatus(sessionId, { mock });
       setStatus(next);
+      if (next.status === "not_found") {
+        setSessionLost(true);
+        return;
+      }
       if (next.functional_gate_status) {
         setFunctionalGate(next.functional_gate_status);
       }
       if (next.gate_status) {
         setSecurityGate(next.gate_status);
+      }
+      if (next.sre_handoff) {
+        setSreHandoff(next.sre_handoff);
       }
     }, 5000);
 
@@ -155,7 +209,7 @@ export function SessionView({
       unsub();
       clearInterval(poll);
     };
-  }, [sessionId]);
+  }, [sessionId, mock]);
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -171,7 +225,18 @@ export function SessionView({
             </h1>
             {mock && (
               <p className="mt-1 text-[13px] text-ink-muted">
-                Mock mode (backend not ready). Claude: ship C7 to connect live SSE.
+                Demo mode — sample events only. Start a new session for a live run.
+              </p>
+            )}
+            {sessionLost && !mock && (
+              <p className="mt-1 text-[13px] text-coral">
+                Session lost — the engine was restarted or this session expired.
+                Start a new session to run the pipeline again.
+              </p>
+            )}
+            {gemmaOnline && !mock && (
+              <p className="mt-1 text-[13px] text-action-blue">
+                Local Gemma is online — gate findings are narrated on-device.
               </p>
             )}
           </div>
@@ -200,6 +265,16 @@ export function SessionView({
               onResolved={() => {
                 void getSessionStatus(sessionId).then(setStatus);
               }}
+            />
+          </div>
+        )}
+
+        {(sreHandoff || sreExplanation) && (
+          <div className="mb-6">
+            <SREPanel
+              handoff={sreHandoff}
+              health={sreHealth}
+              explanation={sreExplanation}
             />
           </div>
         )}

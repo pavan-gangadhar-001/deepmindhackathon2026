@@ -13,18 +13,21 @@ Interface Contract (TASKS.md — do not break without logging):
 `run_pipeline` is blocking, so each session runs on a background daemon thread;
 the endpoints just read/write the shared `Session` it mutates.
 """
+import engine.env  # noqa: F401 — load repo-root .env before other engine imports
 import asyncio
 import json
+import shutil
 import threading
 import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
+from engine.intake import extract_zip_upload
 from engine.orchestrator import run_pipeline
 from engine.session import REGISTRY, Session, TERMINAL_STATUSES
 
@@ -42,6 +45,8 @@ app.add_middleware(
 # SSE tuning.
 STREAM_POLL_INTERVAL_S = 0.3
 MAX_STREAM_POLLS = 4000  # ~20 min ceiling so a stream can't hang forever
+UPLOAD_ROOT = Path(__file__).resolve().parent.parent / ".prody_uploads"
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
 
 
 class SessionStartRequest(BaseModel):
@@ -63,6 +68,46 @@ def _get_session_or_404(session_id: str) -> Session:
     if session is None:
         raise HTTPException(404, "session_id not found")
     return session
+
+
+@app.get("/api/gemma/status")
+def gemma_status():
+    """Whether local Gemma (Ollama) is enabled and reachable."""
+    from engine import gemma_local
+
+    return gemma_local.status_dict()
+
+
+@app.post("/api/upload/project")
+async def upload_project(file: UploadFile = File(...)):
+    """Accept a project .zip from the dashboard, extract it, return project_path."""
+    filename = (file.filename or "").strip()
+    if not filename.lower().endswith(".zip"):
+        raise HTTPException(400, "upload a .zip file")
+
+    UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+    upload_id = uuid.uuid4().hex[:12]
+    zip_path = UPLOAD_ROOT / f"{upload_id}.zip"
+
+    size = 0
+    try:
+        with zip_path.open("wb") as out:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise HTTPException(413, "zip exceeds 100 MB limit")
+                out.write(chunk)
+        project_path = extract_zip_upload(str(zip_path))
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    finally:
+        zip_path.unlink(missing_ok=True)
+
+    return {
+        "project_path": project_path,
+        "filename": filename,
+        "bytes": size,
+    }
 
 
 @app.post("/api/session/start")
@@ -168,6 +213,8 @@ def root():
         "name": "Prody Engine",
         "status": "ok",
         "endpoints": [
+            "POST /api/upload/project",
+            "GET /api/gemma/status",
             "POST /api/session/start",
             "GET /api/session/{id}/events (SSE)",
             "POST /api/session/{id}/approve",

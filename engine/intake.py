@@ -6,8 +6,10 @@ built-ins, so it works on Windows/macOS/Linux. No `ls -la`.
 """
 import os
 import re
+import shutil
 import subprocess
 import tempfile
+import zipfile
 from pathlib import Path
 from typing import Optional
 
@@ -68,6 +70,34 @@ def resolve_intake(repo_url: Optional[str], project_path: Optional[str]) -> str:
         return dest
 
     raise ValueError("provide either repo_url or project_path")
+
+
+def extract_zip_upload(zip_path: str) -> str:
+    """Extract an uploaded project zip into a temp dir and return the project root."""
+    src = Path(zip_path)
+    if not src.is_file():
+        raise ValueError(f"upload not found: {zip_path}")
+
+    dest = Path(tempfile.mkdtemp(prefix="prody_upload_"))
+    dest_root = dest.resolve()
+
+    try:
+        with zipfile.ZipFile(src, "r") as zf:
+            for member in zf.infolist():
+                if member.is_dir():
+                    continue
+                target = (dest / member.filename).resolve()
+                if not str(target).startswith(str(dest_root)):
+                    raise ValueError("zip contains unsafe paths")
+            zf.extractall(dest)
+    except zipfile.BadZipFile as e:
+        shutil.rmtree(dest, ignore_errors=True)
+        raise ValueError("file is not a valid zip archive") from e
+
+    children = [p for p in dest.iterdir() if p.name != "__MACOSX"]
+    if len(children) == 1 and children[0].is_dir():
+        return str(children[0].resolve())
+    return str(dest.resolve())
 
 
 def detect_stack(project_path: str) -> dict:

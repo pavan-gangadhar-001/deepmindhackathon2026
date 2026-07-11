@@ -135,6 +135,25 @@ class Session:
 
     # ---- status snapshot ------------------------------------------------
     @staticmethod
+    def _display_summary(gate: dict) -> Optional[str]:
+        if gate.get("executive_summary"):
+            return str(gate["executive_summary"])
+        summary = gate.get("summary")
+        if isinstance(summary, str):
+            return summary
+        if isinstance(summary, dict):
+            total = summary.get("total", 0)
+            if not total:
+                return "No findings"
+            parts = [
+                f"{summary[k]} {k}"
+                for k in ("critical", "high", "medium", "low", "info")
+                if summary.get(k)
+            ]
+            return f"{total} finding(s): " + ", ".join(parts)
+        return None
+
+    @staticmethod
     def _gate_verdict(gate: Optional[dict], gate_type: str) -> Optional[dict]:
         if not gate:
             return None
@@ -143,7 +162,7 @@ class Session:
             return None
         return {
             "status": status,
-            "summary": gate.get("summary") or gate.get("executive_summary"),
+            "summary": Session._display_summary(gate),
             "gate_type": gate_type,
         }
 
@@ -159,6 +178,7 @@ class Session:
             ),
             "gate_status": self._gate_verdict(self.gate, "security"),
             "pending_approval": self.pending_approval,
+            "sre_handoff": self.sre_handoff,
             "events_count": len(self.events),
         }
 

@@ -16,6 +16,7 @@ import traceback
 from typing import Optional
 
 from . import gate_client, intake as intake_mod
+from . import gemma_local
 from .events import Agent, EventType
 from .session import Session
 from deploy_agent import runner as deploy_runner
@@ -28,6 +29,27 @@ from tools import gcloud
 def _log(session: Session, message: str, agent: str = Agent.ORCHESTRATOR,
          data: Optional[dict] = None) -> None:
     session.emit(EventType.LOG, agent=agent, message=message, data=data)
+
+
+def _gate_event_summary(verdict: dict) -> Optional[str]:
+    return Session._display_summary(verdict)
+
+
+def _emit_findings(session: Session, findings: list, agent: str) -> None:
+    if gemma_local.available() and findings:
+        session.emit(
+            EventType.AGENT_MESSAGE,
+            agent=Agent.GEMMA,
+            message="Explaining findings locally with Gemma (on-device, private).",
+        )
+    for raw in findings:
+        data = gemma_local.enrich_finding(raw) if gemma_local.available() else raw
+        session.emit(
+            EventType.FINDING,
+            agent=agent,
+            message=data.get("plain_summary") or data.get("title", "Finding"),
+            data=data,
+        )
 
 
 # ---- phase 1: intake ---------------------------------------------------
@@ -75,16 +97,15 @@ def _phase_functional(session: Session) -> bool:
         return False
 
     session.functional_gate = verdict
-    for f in verdict.get("findings", []):
-        session.emit(EventType.FINDING, agent=Agent.FUNCTIONAL,
-                     message=f.get("title", "Functional finding"), data=f)
+    _emit_findings(session, verdict.get("findings", []), Agent.FUNCTIONAL)
 
     status = verdict.get("status")
     session.emit(EventType.GATE, agent=Agent.FUNCTIONAL,
                  message=verdict.get("executive_summary")
                  or f"Functional verdict: {status}",
-                 data={"status": status, "summary": verdict.get("summary"),
-                       "gate_type": "functional"})
+                 data={"status": status, "summary": _gate_event_summary(verdict),
+                       "gate_type": "functional",
+                       "narrator": "gemma_local" if gemma_local.available() else "gemini"})
     session.emit_phase_done("functional_gate")
 
     if status in ("FAIL", "ERROR"):
@@ -126,16 +147,15 @@ def _phase_security(session: Session) -> bool:
         return False
 
     session.gate = verdict
-    for f in verdict.get("findings", []):
-        session.emit(EventType.FINDING, agent=Agent.SECURITY,
-                     message=f.get("title", "Security finding"), data=f)
+    _emit_findings(session, verdict.get("findings", []), Agent.SECURITY)
 
     status = verdict.get("status")
     session.emit(EventType.GATE, agent=Agent.SECURITY,
                  message=verdict.get("executive_summary")
                  or f"Security verdict: {status}",
-                 data={"status": status, "summary": verdict.get("summary"),
-                       "gate_type": "security"})
+                 data={"status": status, "summary": _gate_event_summary(verdict),
+                       "gate_type": "security",
+                       "narrator": "gemma_local" if gemma_local.available() else "gemini"})
     session.emit_phase_done("security_scan")
 
     if gate_client.is_blocking(verdict):

@@ -9,6 +9,7 @@ venv/
 .pentest_gate.json
 .functest_gate.json
 .pentest_venv/
+.prody_uploads/
 *.db
 
 # Deploy agent runtime artifacts
@@ -23,6 +24,7 @@ deploy_agent/managed_agent.log
 # Env / secrets
 .env
 .env.*
+!.env.example
 
 # Node / Next.js (landing + dashboard)
 node_modules/

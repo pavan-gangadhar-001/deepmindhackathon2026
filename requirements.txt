@@ -8,6 +8,8 @@ google-genai>=2.11.0
 fastapi
 uvicorn[standard]
 pydantic>=2
+python-multipart
+python-dotenv
 
 # --- HTTP client (gate calls, SRE health checks) + parsing ---
 httpx

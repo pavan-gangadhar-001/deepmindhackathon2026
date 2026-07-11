@@ -317,7 +317,15 @@ def run_deploy_phase(session: Session) -> bool:
 
     output = response.output_text or ""
     session.metadata["devops_interaction_id"] = response.id
-    session.metadata["deploy_result"] = {"ok": True, "output": output, "managed_agent": True}
+    session.metadata["deploy_result"] = {
+        "ok": True,
+        "output": output,
+        "managed_agent": True,
+        "deploy_url": deploy_url,
+        "project_id": session.metadata.get("project_id"),
+        "service": session.metadata.get("service_name"),
+        "region": session.metadata.get("region"),
+    }
 
     deploy_url = _extract_deploy_url(output)
     session.emit(
